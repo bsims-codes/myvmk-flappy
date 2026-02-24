@@ -57,16 +57,116 @@ function randomInRange(min, max) {
 // ASSET MANAGER
 // ============================================
 const AssetManager = {
-    sprites: {},
+    images: {},
+    customImages: {},
+    loaded: false,
+    db: null,
 
-    // Register a sprite (for future use with actual images)
-    register(name, image) {
-        this.sprites[name] = image;
+    // IndexedDB constants
+    DB_NAME: 'FlappyBirdAssets',
+    DB_VERSION: 1,
+    STORE_NAME: 'customAssets',
+
+    // Initialize IndexedDB
+    async initDB() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(this.DB_NAME, this.DB_VERSION);
+
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => {
+                this.db = request.result;
+                resolve(this.db);
+            };
+
+            request.onupgradeneeded = (event) => {
+                const database = event.target.result;
+                if (!database.objectStoreNames.contains(this.STORE_NAME)) {
+                    database.createObjectStore(this.STORE_NAME, { keyPath: 'key' });
+                }
+            };
+        });
     },
 
-    // Draw a sprite - currently draws shapes, can be swapped for images later
+    // Get custom image from IndexedDB
+    async getCustomImage(key) {
+        if (!this.db) return null;
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([this.STORE_NAME], 'readonly');
+            const store = transaction.objectStore(this.STORE_NAME);
+            const request = store.get(key);
+
+            request.onsuccess = () => resolve(request.result?.blob || null);
+            request.onerror = () => reject(request.error);
+        });
+    },
+
+    // Convert blob to Image element
+    blobToImage(blob) {
+        return new Promise((resolve, reject) => {
+            const url = URL.createObjectURL(blob);
+            const img = new Image();
+            img.onload = () => resolve(img);
+            img.onerror = () => reject(new Error('Failed to load image from blob'));
+            img.src = url;
+        });
+    },
+
+    // Load custom assets from IndexedDB
+    async loadCustomAssets() {
+        try {
+            await this.initDB();
+
+            const customKeys = ['bird', 'background', 'ground'];
+            for (const key of customKeys) {
+                const blob = await this.getCustomImage(key);
+                if (blob) {
+                    this.customImages[key] = await this.blobToImage(blob);
+                    console.log(`Loaded custom ${key} asset`);
+                }
+            }
+        } catch (e) {
+            console.warn('Could not load custom assets:', e);
+        }
+    },
+
+    // Load an image and return a promise
+    loadImage(name, src) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => {
+                this.images[name] = img;
+                resolve(img);
+            };
+            img.onerror = () => reject(new Error(`Failed to load ${src}`));
+            img.src = src;
+        });
+    },
+
+    // Load all assets (pipe images + custom assets)
+    async loadAll() {
+        // Load custom assets from IndexedDB first
+        await this.loadCustomAssets();
+
+        // Load pipe assets
+        await Promise.all([
+            // Pipe caps (the opening part)
+            this.loadImage('topA', 'assets/topA.png'),
+            this.loadImage('topB', 'assets/TopB.png'),
+            this.loadImage('bottomA', 'assets/bottomA.png'),
+            this.loadImage('bottomB', 'assets/bottomB.png'),
+            // Pipe extensions (tileable body)
+            this.loadImage('topA-ext', 'assets/topA-ext.png'),
+            this.loadImage('topB-ext', 'assets/topB-ext.png'),
+            this.loadImage('bottomA-ext', 'assets/bottomA-ext.png'),
+            this.loadImage('bottomB-ext', 'assets/bottomB-ext.png')
+        ]);
+        this.loaded = true;
+    },
+
+    // Draw a sprite - uses images for pipes if loaded, otherwise shapes
     drawSprite(ctx, name, x, y, w, h, opts = {}) {
-        const { rotation = 0, color = '#FFF', secondaryColor = null } = opts;
+        const { rotation = 0, color = '#FFF', variant = 'A' } = opts;
 
         ctx.save();
         ctx.translate(x + w / 2, y + h / 2);
@@ -78,10 +178,10 @@ const AssetManager = {
                 this.drawBird(ctx, 0, 0, w, h, opts);
                 break;
             case 'pipe_top':
-                this.drawPipe(ctx, 0, 0, w, h, true);
+                this.drawPipeImage(ctx, 0, 0, w, h, true, variant);
                 break;
             case 'pipe_bottom':
-                this.drawPipe(ctx, 0, 0, w, h, false);
+                this.drawPipeImage(ctx, 0, 0, w, h, false, variant);
                 break;
             case 'ground':
                 this.drawGround(ctx, 0, 0, w, h);
@@ -94,7 +194,87 @@ const AssetManager = {
         ctx.restore();
     },
 
+    // Draw pipe using image assets with cap + tiled extension
+    drawPipeImage(ctx, x, y, w, h, isTop, variant) {
+        const capKey = isTop ? `top${variant}` : `bottom${variant}`;
+        const extKey = isTop ? `top${variant}-ext` : `bottom${variant}-ext`;
+        const capImg = this.images[capKey];
+        const extImg = this.images[extKey];
+
+        // Overlap amount to hide seams between cap and extensions
+        const OVERLAP = 30;
+
+        if (capImg && extImg && this.loaded) {
+            // Calculate scaled dimensions for cap maintaining aspect ratio
+            const capAspect = capImg.width / capImg.height;
+            const capScaledHeight = w / capAspect;
+
+            // Calculate scaled dimensions for extension
+            const extAspect = extImg.width / extImg.height;
+            const extScaledHeight = w / extAspect;
+
+            // Effective tile step (reduced by overlap so tiles overlap each other)
+            const tileStep = extScaledHeight - OVERLAP;
+
+            if (isTop) {
+                // Top pipe: cap first (behind), then extensions on top
+                // Cap position: bottom edge (opening) at y + h
+                const capY = y + h - capScaledHeight;
+
+                // Draw cap first (behind)
+                ctx.drawImage(capImg, x, capY, w, capScaledHeight);
+
+                // Tile extensions from cap upward to ceiling, each overlapping the previous
+                let tileY = capY + OVERLAP;
+                while (tileY > y) {
+                    tileY -= tileStep;
+                    // Clip if extension would go above the draw area
+                    if (tileY < y) {
+                        const clippedHeight = extScaledHeight - (y - tileY);
+                        const srcY = (y - tileY) / extScaledHeight * extImg.height;
+                        ctx.drawImage(extImg, 0, srcY, extImg.width, extImg.height - srcY,
+                                      x, y, w, clippedHeight);
+                    } else {
+                        ctx.drawImage(extImg, x, tileY, w, extScaledHeight);
+                    }
+                }
+            } else {
+                // Bottom pipe: cap first (behind), then extensions on top
+                // Cap position: top edge (opening) at y
+
+                // Draw cap first (behind)
+                ctx.drawImage(capImg, x, y, w, capScaledHeight);
+
+                // Tile extensions from cap downward, each overlapping the previous
+                let tileY = y + capScaledHeight - OVERLAP;
+                const endY = y + h;
+                while (tileY < endY) {
+                    const remainingHeight = endY - tileY;
+                    if (remainingHeight < extScaledHeight) {
+                        // Clip the last extension
+                        const srcHeight = remainingHeight / extScaledHeight * extImg.height;
+                        ctx.drawImage(extImg, 0, 0, extImg.width, srcHeight,
+                                      x, tileY, w, remainingHeight);
+                    } else {
+                        ctx.drawImage(extImg, x, tileY, w, extScaledHeight);
+                    }
+                    tileY += tileStep;
+                }
+            }
+        } else {
+            // Fallback to shape drawing if images not loaded
+            this.drawPipe(ctx, x, y, w, h, isTop);
+        }
+    },
+
     drawBird(ctx, x, y, w, h, opts) {
+        // Use custom bird image if available
+        if (this.customImages.bird) {
+            ctx.drawImage(this.customImages.bird, x, y, w, h);
+            return;
+        }
+
+        // Default: draw shape
         // Body
         ctx.fillStyle = '#F7DC6F';
         ctx.beginPath();
@@ -157,6 +337,13 @@ const AssetManager = {
     },
 
     drawGround(ctx, x, y, w, h) {
+        // Use custom ground image if available
+        if (this.customImages.ground) {
+            ctx.drawImage(this.customImages.ground, x, y, w, h);
+            return;
+        }
+
+        // Default: draw shape
         // Dirt
         ctx.fillStyle = '#D4A574';
         ctx.fillRect(x, y, w, h);
@@ -164,6 +351,17 @@ const AssetManager = {
         // Grass on top
         ctx.fillStyle = '#7CB342';
         ctx.fillRect(x, y, w, 15);
+    },
+
+    // Draw background (custom or default sky color)
+    drawBackground(ctx, w, h) {
+        if (this.customImages.background) {
+            ctx.drawImage(this.customImages.background, 0, 0, w, h);
+        } else {
+            // Default sky color
+            ctx.fillStyle = '#70C5CE';
+            ctx.fillRect(0, 0, w, h);
+        }
     }
 };
 
@@ -238,12 +436,16 @@ function spawnPipePair() {
     const bottomPipeY = gapCenterY + PIPE_GAP / 2;
     const bottomPipeHeight = CANVAS_HEIGHT - bottomPipeY;
 
+    // Randomly pick A or B variant for visual variety
+    const variant = seededRandom() < 0.5 ? 'A' : 'B';
+
     pipes.push({
         x: CANVAS_WIDTH,
         gapCenterY: gapCenterY,
         topHeight: topPipeHeight,
         bottomY: bottomPipeY,
         bottomHeight: bottomPipeHeight,
+        variant: variant,
         scored: false
     });
 }
@@ -360,17 +562,16 @@ function update(dt) {
 }
 
 function render(ctx) {
-    // Clear canvas with sky color
-    ctx.fillStyle = '#70C5CE';
-    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    // Draw background (custom or default sky)
+    AssetManager.drawBackground(ctx, CANVAS_WIDTH, CANVAS_HEIGHT);
 
     // Draw pipes
     for (const pipe of pipes) {
         // Top pipe
-        AssetManager.drawSprite(ctx, 'pipe_top', pipe.x, 0, PIPE_WIDTH, pipe.topHeight);
+        AssetManager.drawSprite(ctx, 'pipe_top', pipe.x, 0, PIPE_WIDTH, pipe.topHeight, { variant: pipe.variant });
 
         // Bottom pipe
-        AssetManager.drawSprite(ctx, 'pipe_bottom', pipe.x, pipe.bottomY, PIPE_WIDTH, pipe.bottomHeight);
+        AssetManager.drawSprite(ctx, 'pipe_bottom', pipe.x, pipe.bottomY, PIPE_WIDTH, pipe.bottomHeight, { variant: pipe.variant });
 
         // Debug: draw pipe gap center line
         if (debugMode) {
@@ -535,7 +736,15 @@ function gameLoop(currentTime) {
 // ============================================
 // INITIALIZATION
 // ============================================
-function init() {
+async function init() {
+    // Load assets first
+    try {
+        await AssetManager.loadAll();
+        console.log('Assets loaded successfully');
+    } catch (e) {
+        console.warn('Some assets failed to load, using fallback shapes:', e);
+    }
+
     initRNG(SEED);
     setupInput();
     lastTime = performance.now();
