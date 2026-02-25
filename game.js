@@ -422,6 +422,72 @@ let bird = {
 let pipes = [];
 let pipeTimer = 0;
 
+// Pixie dust particles
+let particles = [];
+const PARTICLE_SPAWN_RATE = 3; // particles per frame
+const PARTICLE_COLORS = ['#FFD700', '#FFF8DC', '#FFFACD', '#FFE4B5', '#FFFFFF', '#FFB6C1'];
+
+function spawnParticle() {
+    particles.push({
+        x: bird.x + BIRD_WIDTH * 0.3,
+        y: bird.y + BIRD_HEIGHT / 2 + (Math.random() - 0.5) * 20,
+        vx: -50 - Math.random() * 50, // drift left
+        vy: (Math.random() - 0.5) * 40, // slight vertical drift
+        size: 2 + Math.random() * 4,
+        color: PARTICLE_COLORS[Math.floor(Math.random() * PARTICLE_COLORS.length)],
+        life: 1.0, // 1.0 = full life, 0 = dead
+        decay: 0.8 + Math.random() * 0.8, // life lost per second
+        twinkleSpeed: 5 + Math.random() * 10,
+        twinkleOffset: Math.random() * Math.PI * 2
+    });
+}
+
+function updateParticles(dt) {
+    for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+
+        // Move particle
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vy += 30 * dt; // slight gravity
+
+        // Decay life
+        p.life -= p.decay * dt;
+
+        // Remove dead particles
+        if (p.life <= 0) {
+            particles.splice(i, 1);
+        }
+    }
+}
+
+function renderParticles(ctx) {
+    const time = performance.now() / 1000;
+
+    for (const p of particles) {
+        // Twinkle effect - oscillating opacity
+        const twinkle = 0.5 + 0.5 * Math.sin(time * p.twinkleSpeed + p.twinkleOffset);
+        const alpha = p.life * twinkle;
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = p.color;
+
+        // Draw star/sparkle shape
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Add a smaller bright center
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * p.life * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+    }
+}
+
 // Score
 let score = 0;
 let bestScore = parseInt(localStorage.getItem('flappyBestScore')) || 0;
@@ -437,6 +503,7 @@ function resetGame() {
 
     pipes = [];
     pipeTimer = 0;
+    particles = [];
     score = 0;
 
     // Reset timing to prevent accumulated time issues
@@ -505,7 +572,15 @@ function checkAABBCollision(rect1, rect2) {
 }
 
 function update(dt) {
+    // Update particles even when not playing (for fade out)
+    updateParticles(dt);
+
     if (state !== GameState.PLAYING) return;
+
+    // Spawn pixie dust particles
+    for (let i = 0; i < PARTICLE_SPAWN_RATE; i++) {
+        spawnParticle();
+    }
 
     // Update bird physics
     bird.vy += GRAVITY * dt;
@@ -618,6 +693,9 @@ function render(ctx) {
             ctx.strokeRect(pipe.x, pipe.bottomY, PIPE_WIDTH, pipe.bottomHeight);
         }
     }
+
+    // Draw pixie dust particles (behind bird)
+    renderParticles(ctx);
 
     // Draw ground
     AssetManager.drawSprite(ctx, 'ground', 0, GROUND_Y, CANVAS_WIDTH, CANVAS_HEIGHT - GROUND_Y);
