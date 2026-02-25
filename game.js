@@ -424,19 +424,23 @@ let pipeTimer = 0;
 
 // Pixie dust particles
 let particles = [];
-const PARTICLE_SPAWN_RATE = 3; // particles per frame
-const PARTICLE_COLORS = ['#FFD700', '#FFF8DC', '#FFFACD', '#FFE4B5', '#FFFFFF', '#FFB6C1'];
+const PARTICLE_SPAWN_RATE = 4; // particles per frame
+const PARTICLE_COLORS = ['#FFD700', '#FFF8DC', '#FFFACD', '#e7db91']; // gold, cream
+let trailY = BIRD_START_Y + BIRD_HEIGHT * 0.3; // smoothed Y position for trail
 
 function spawnParticle() {
+    // Slowly follow bird's Y position (creates smooth horizontal trail)
+    trailY += (bird.y + BIRD_HEIGHT * 0.3 - trailY) * 0.02;
+
     particles.push({
-        x: bird.x + BIRD_WIDTH * 0.3,
-        y: bird.y + BIRD_HEIGHT / 2 + (Math.random() - 0.5) * 20,
-        vx: -50 - Math.random() * 50, // drift left
-        vy: (Math.random() - 0.5) * 40, // slight vertical drift
-        size: 2 + Math.random() * 4,
+        x: bird.x,
+        y: trailY + (Math.random() - 0.5) * 6, // spawn at smoothed Y
+        vx: -30 - Math.random() * 20, // drift left only
+        vy: 0, // no vertical movement at all
+        size: 1 + Math.random(), // 1-2px
         color: PARTICLE_COLORS[Math.floor(Math.random() * PARTICLE_COLORS.length)],
         life: 1.0, // 1.0 = full life, 0 = dead
-        decay: 0.8 + Math.random() * 0.8, // life lost per second
+        decay: 0.3 + Math.random() * 0.3, // slower decay = longer trail
         twinkleSpeed: 5 + Math.random() * 10,
         twinkleOffset: Math.random() * Math.PI * 2
     });
@@ -449,7 +453,7 @@ function updateParticles(dt) {
         // Move particle
         p.x += p.vx * dt;
         p.y += p.vy * dt;
-        p.vy += 30 * dt; // slight gravity
+        p.vy += 0; // no gravity - pure horizontal trail
 
         // Decay life
         p.life -= p.decay * dt;
@@ -473,15 +477,9 @@ function renderParticles(ctx) {
         ctx.globalAlpha = alpha;
         ctx.fillStyle = p.color;
 
-        // Draw star/sparkle shape
+        // Draw tiny sparkle
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Add a smaller bright center
-        ctx.fillStyle = '#FFFFFF';
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size * p.life * 0.4, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.restore();
@@ -504,6 +502,7 @@ function resetGame() {
     pipes = [];
     pipeTimer = 0;
     particles = [];
+    trailY = BIRD_START_Y + BIRD_HEIGHT * 0.3;
     score = 0;
 
     // Reset timing to prevent accumulated time issues
