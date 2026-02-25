@@ -7,13 +7,14 @@ const CANVAS_HEIGHT = 600;
 // Bird constants
 const BIRD_START_X = 200;
 const BIRD_START_Y = 300;
-const BIRD_WIDTH = 50;
-const BIRD_HEIGHT = 35;
-const BIRD_HITBOX_WIDTH = 34;
-const BIRD_HITBOX_HEIGHT = 24;
-const GRAVITY = 2000; // px/s²
-const FLAP_VELOCITY = -520; // px/s
-const MAX_FALL_SPEED = 900; // px/s
+const BIRD_WIDTH = 60;
+const BIRD_HEIGHT = 60;
+const BIRD_HITBOX_WIDTH = 30;
+const BIRD_HITBOX_HEIGHT = 30;
+const GRAVITY = 1200; // px/s² (reduced for floatier feel)
+const FLAP_VELOCITY = -420; // px/s
+const MAX_FALL_SPEED = 500; // px/s (reduced for gentler falling)
+const BIRD_ROTATES = false; // Set to true for nose-dive rotation
 
 // Pipe constants
 const PIPE_WIDTH = 90;
@@ -148,6 +149,12 @@ const AssetManager = {
         // Load custom assets from IndexedDB first
         await this.loadCustomAssets();
 
+        // Get bird GIF from DOM element (keeps animation alive)
+        const birdGifElement = document.getElementById('birdGif');
+        if (birdGifElement) {
+            this.images.bird = birdGifElement;
+        }
+
         // Load pipe assets
         await Promise.all([
             // Pipe caps (the opening part)
@@ -268,13 +275,19 @@ const AssetManager = {
     },
 
     drawBird(ctx, x, y, w, h, opts) {
-        // Use custom bird image if available
+        // Use custom bird image from IndexedDB if available
         if (this.customImages.bird) {
             ctx.drawImage(this.customImages.bird, x, y, w, h);
             return;
         }
 
-        // Default: draw shape
+        // Use bird image from assets if available (supports animated GIF)
+        if (this.images.bird) {
+            ctx.drawImage(this.images.bird, x, y, w, h);
+            return;
+        }
+
+        // Fallback: draw shape
         // Body
         ctx.fillStyle = '#F7DC6F';
         ctx.beginPath();
@@ -490,8 +503,12 @@ function update(dt) {
     bird.y += bird.vy * dt;
 
     // Bird rotation based on velocity (visual only)
-    const targetRotation = Math.min(Math.max(bird.vy / 500, -0.5), 1.2);
-    bird.rotation = targetRotation;
+    if (BIRD_ROTATES) {
+        const targetRotation = Math.min(Math.max(bird.vy / 500, -0.5), 1.2);
+        bird.rotation = targetRotation;
+    } else {
+        bird.rotation = 0;
+    }
 
     // Check ceiling/ground collision
     if (bird.y <= CEILING_Y || bird.y + BIRD_HEIGHT >= GROUND_Y) {
@@ -593,10 +610,18 @@ function render(ctx) {
     // Draw ground
     AssetManager.drawSprite(ctx, 'ground', 0, GROUND_Y, CANVAS_WIDTH, CANVAS_HEIGHT - GROUND_Y);
 
-    // Draw bird
-    AssetManager.drawSprite(ctx, 'bird', bird.x, bird.y, BIRD_WIDTH, BIRD_HEIGHT, {
-        rotation: bird.rotation
-    });
+    // Position bird sprite (DOM element for GIF animation support)
+    const birdSprite = document.getElementById('birdSprite');
+    if (birdSprite) {
+        birdSprite.style.left = bird.x + 'px';
+        birdSprite.style.top = bird.y + 'px';
+        birdSprite.style.transform = `rotate(${bird.rotation}rad)`;
+    } else {
+        // Fallback: draw to canvas
+        AssetManager.drawSprite(ctx, 'bird', bird.x, bird.y, BIRD_WIDTH, BIRD_HEIGHT, {
+            rotation: bird.rotation
+        });
+    }
 
     // Debug: draw bird hitbox
     if (debugMode) {
