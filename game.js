@@ -166,23 +166,25 @@ const AssetManager = {
             this.loadImage('playNow', 'assets/tinkshex-playnow.png'),
             // Decorative elements
             this.loadImage('palm', 'assets/tink-palm.png'),
-            // Pipe caps (the opening part)
-            this.loadImage('topA', 'assets/topA.png'),
-            this.loadImage('topB', 'assets/TopB.png'),
-            this.loadImage('bottomA', 'assets/bottomA.png'),
-            this.loadImage('bottomB', 'assets/bottomB.png'),
-            // Pipe extensions (tileable body)
-            this.loadImage('topA-ext', 'assets/topA-ext.png'),
-            this.loadImage('topB-ext', 'assets/topB-ext.png'),
-            this.loadImage('bottomA-ext', 'assets/bottomA-ext.png'),
-            this.loadImage('bottomB-ext', 'assets/bottomB-ext.png')
+            // Background and ground
+            this.loadImage('background', 'assets/background.png'),
+            this.loadImage('ground', 'assets/tinkandhexie-floor.png'),
+            // Ceiling obstacle assets (chains)
+            this.loadImage('ceilingExt', 'assets/tinkandhex-chain.png'),
+            this.loadImage('ceilingCapA', 'assets/tinkandhex-ob2.png'),
+            this.loadImage('ceilingCapB', 'assets/tinkandhex-obs.png'),
+            // Floor obstacle assets (bases)
+            this.loadImage('floorExtA', 'assets/tinkandhexie-base1.png'),
+            this.loadImage('floorExtB', 'assets/tinkandhexie-base23.png'),
+            this.loadImage('floorCapA', 'assets/tinkandhex-ob3.png'),
+            this.loadImage('floorCapB', 'assets/tinkandhexie-obs1.png')
         ]);
         this.loaded = true;
     },
 
     // Draw a sprite - uses images for pipes if loaded, otherwise shapes
     drawSprite(ctx, name, x, y, w, h, opts = {}) {
-        const { rotation = 0, color = '#FFF', variant = 'A' } = opts;
+        const { rotation = 0, color = '#FFF' } = opts;
 
         ctx.save();
         ctx.translate(x + w / 2, y + h / 2);
@@ -194,10 +196,10 @@ const AssetManager = {
                 this.drawBird(ctx, 0, 0, w, h, opts);
                 break;
             case 'pipe_top':
-                this.drawPipeImage(ctx, 0, 0, w, h, true, variant);
+                this.drawPipeImage(ctx, 0, 0, w, h, true, opts);
                 break;
             case 'pipe_bottom':
-                this.drawPipeImage(ctx, 0, 0, w, h, false, variant);
+                this.drawPipeImage(ctx, 0, 0, w, h, false, opts);
                 break;
             case 'ground':
                 this.drawGround(ctx, 0, 0, w, h);
@@ -211,12 +213,21 @@ const AssetManager = {
     },
 
     // Draw pipe using image assets with cap + tiled extension
-    drawPipeImage(ctx, x, y, w, h, isTop, variant) {
-        const capKey = isTop ? `top${variant}` : `bottom${variant}`;
-        const extKey = isTop ? `top${variant}-ext` : `bottom${variant}-ext`;
-        // Use custom images if available, otherwise fall back to defaults
-        const capImg = this.customImages[capKey] || this.images[capKey];
-        const extImg = this.customImages[extKey] || this.images[extKey];
+    drawPipeImage(ctx, x, y, w, h, isTop, opts) {
+        let capImg, extImg;
+
+        if (isTop) {
+            // Ceiling: always chain extension, variant selects cap (A=ob2, B=obs)
+            const capVariant = opts.ceilingCapVariant || 'A';
+            capImg = this.images[`ceilingCap${capVariant}`];
+            extImg = this.images['ceilingExt'];
+        } else {
+            // Floor: variant selects extension (A=base1, B=base23) and cap (A=ob3, B=obs1)
+            const extVariant = opts.floorExtVariant || 'A';
+            const capVariant = opts.floorCapVariant || 'A';
+            capImg = this.images[`floorCap${capVariant}`];
+            extImg = this.images[`floorExt${extVariant}`];
+        }
 
         // Overlap amount to hide seams between cap and extensions
         const OVERLAP = 30;
@@ -360,13 +371,19 @@ const AssetManager = {
     },
 
     drawGround(ctx, x, y, w, h) {
-        // Use custom ground image if available
+        // Use custom ground image from IndexedDB if available
         if (this.customImages.ground) {
             ctx.drawImage(this.customImages.ground, x, y, w, h);
             return;
         }
 
-        // Default: draw shape
+        // Use ground image from assets folder
+        if (this.images.ground) {
+            ctx.drawImage(this.images.ground, x, y, w, h);
+            return;
+        }
+
+        // Fallback: draw shape
         // Dirt
         ctx.fillStyle = '#D4A574';
         ctx.fillRect(x, y, w, h);
@@ -379,7 +396,11 @@ const AssetManager = {
     // Draw background (custom or default sky color)
     drawBackground(ctx, w, h) {
         if (this.customImages.background) {
+            // Custom background from IndexedDB (admin upload)
             ctx.drawImage(this.customImages.background, 0, 0, w, h);
+        } else if (this.images.background) {
+            // Background from assets folder
+            ctx.drawImage(this.images.background, 0, 0, w, h);
         } else {
             // Default sky color
             ctx.fillStyle = '#70C5CE';
@@ -534,8 +555,12 @@ function spawnPipePair() {
     const bottomPipeY = gapCenterY + PIPE_GAP / 2;
     const bottomPipeHeight = CANVAS_HEIGHT - bottomPipeY;
 
-    // Randomly pick A or B variant for visual variety
-    const variant = seededRandom() < 0.5 ? 'A' : 'B';
+    // Randomly pick variants for ceiling and floor obstacles
+    // Ceiling: always chain extension, random cap (A=ob2, B=obs)
+    // Floor: random extension (A=base1, B=base23), random cap (A=ob3, B=obs1)
+    const ceilingCapVariant = seededRandom() < 0.5 ? 'A' : 'B';
+    const floorExtVariant = seededRandom() < 0.5 ? 'A' : 'B';
+    const floorCapVariant = seededRandom() < 0.5 ? 'A' : 'B';
 
     pipes.push({
         x: CANVAS_WIDTH,
@@ -543,7 +568,9 @@ function spawnPipePair() {
         topHeight: topPipeHeight,
         bottomY: bottomPipeY,
         bottomHeight: bottomPipeHeight,
-        variant: variant,
+        ceilingCapVariant: ceilingCapVariant,
+        floorExtVariant: floorExtVariant,
+        floorCapVariant: floorCapVariant,
         scored: false
     });
 }
@@ -686,7 +713,7 @@ function render(ctx) {
     if (palmImg && state !== GameState.READY) {
         const palmWidth = palmImg.width;
         const palmHeight = palmImg.height;
-        const palmY = GROUND_Y - palmHeight + 10; // Position at ground level
+        const palmY = GROUND_Y - palmHeight + 50; // Position at ground level
 
         // Calculate wrapped offset
         const wrappedOffset = palmOffset % palmWidth;
@@ -699,11 +726,16 @@ function render(ctx) {
 
     // Draw pipes
     for (const pipe of pipes) {
-        // Top pipe
-        AssetManager.drawSprite(ctx, 'pipe_top', pipe.x, 0, PIPE_WIDTH, pipe.topHeight, { variant: pipe.variant });
+        // Top pipe (ceiling obstacle)
+        AssetManager.drawSprite(ctx, 'pipe_top', pipe.x, 0, PIPE_WIDTH, pipe.topHeight, {
+            ceilingCapVariant: pipe.ceilingCapVariant
+        });
 
-        // Bottom pipe
-        AssetManager.drawSprite(ctx, 'pipe_bottom', pipe.x, pipe.bottomY, PIPE_WIDTH, pipe.bottomHeight, { variant: pipe.variant });
+        // Bottom pipe (floor obstacle)
+        AssetManager.drawSprite(ctx, 'pipe_bottom', pipe.x, pipe.bottomY, PIPE_WIDTH, pipe.bottomHeight, {
+            floorExtVariant: pipe.floorExtVariant,
+            floorCapVariant: pipe.floorCapVariant
+        });
 
         // Debug: draw pipe gap center line
         if (debugMode) {
