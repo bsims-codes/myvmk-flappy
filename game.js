@@ -159,8 +159,11 @@ const AssetManager = {
             this.images.bird = birdGifElement;
         }
 
-        // Load pipe assets
+        // Load pipe assets and UI images
         await Promise.all([
+            // Title screen images
+            this.loadImage('titleCard', 'assets/tinkshex-titlecard.png'),
+            this.loadImage('playNow', 'assets/tinkshex-playnow.png'),
             // Pipe caps (the opening part)
             this.loadImage('topA', 'assets/topA.png'),
             this.loadImage('topB', 'assets/TopB.png'),
@@ -696,17 +699,25 @@ function render(ctx) {
     // Draw pixie dust particles (behind bird)
     renderParticles(ctx);
 
-    // Draw ground
-    AssetManager.drawSprite(ctx, 'ground', 0, GROUND_Y, CANVAS_WIDTH, CANVAS_HEIGHT - GROUND_Y);
+    // Draw ground (skip during READY state for clean title screen)
+    if (state !== GameState.READY) {
+        AssetManager.drawSprite(ctx, 'ground', 0, GROUND_Y, CANVAS_WIDTH, CANVAS_HEIGHT - GROUND_Y);
+    }
 
     // Position bird sprite (DOM element for GIF animation support)
+    // Hide during READY state (title screen)
     const birdSprite = document.getElementById('birdSprite');
     if (birdSprite) {
-        birdSprite.style.left = bird.x + 'px';
-        birdSprite.style.top = bird.y + 'px';
-        birdSprite.style.transform = `rotate(${bird.rotation}rad)`;
-    } else {
-        // Fallback: draw to canvas
+        if (state === GameState.READY) {
+            birdSprite.style.visibility = 'hidden';
+        } else {
+            birdSprite.style.visibility = 'visible';
+            birdSprite.style.left = bird.x + 'px';
+            birdSprite.style.top = bird.y + 'px';
+            birdSprite.style.transform = `rotate(${bird.rotation}rad)`;
+        }
+    } else if (state !== GameState.READY) {
+        // Fallback: draw to canvas (not during READY state)
         AssetManager.drawSprite(ctx, 'bird', bird.x, bird.y, BIRD_WIDTH, BIRD_HEIGHT, {
             rotation: bird.rotation
         });
@@ -736,25 +747,44 @@ function render(ctx) {
 
     // State-specific UI
     if (state === GameState.READY) {
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+        // Dark overlay
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
         ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-        ctx.fillStyle = '#FFF';
-        ctx.strokeStyle = '#000';
-        ctx.lineWidth = 4;
-        ctx.font = 'bold 64px Arial';
-        ctx.textAlign = 'center';
-        ctx.strokeText('FLAPPY BIRD', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 50);
-        ctx.fillText('FLAPPY BIRD', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 50);
+        // Title card - centered
+        const titleImg = AssetManager.images.titleCard;
+        if (titleImg) {
+            const titleX = (CANVAS_WIDTH - titleImg.width) / 2;
+            const titleY = (CANVAS_HEIGHT - titleImg.height) / 2 - 30;
+            ctx.drawImage(titleImg, titleX, titleY);
+        }
 
-        ctx.font = 'bold 28px Arial';
-        ctx.strokeText('Tap, Click, or Press Space to Start', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 20);
-        ctx.fillText('Tap, Click, or Press Space to Start', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 20);
+        // Play Now button - bottom left with glow effect
+        const playImg = AssetManager.images.playNow;
+        if (playImg) {
+            const scale = 1.5; // Make it larger
+            const playWidth = playImg.width * scale;
+            const playHeight = playImg.height * scale;
+            const playX = 15;
+            const playY = CANVAS_HEIGHT - playHeight - 15;
 
-        ctx.font = '18px Arial';
-        ctx.lineWidth = 2;
-        ctx.strokeText('Press D for Debug Mode', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 60);
-        ctx.fillText('Press D for Debug Mode', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 60);
+            // Animated glow effect
+            const time = performance.now() / 1000;
+            const glowIntensity = 0.5 + 0.5 * Math.sin(time * 3); // Pulsing glow
+            const glowSize = 15 + 10 * Math.sin(time * 3);
+
+            ctx.save();
+            ctx.shadowColor = '#FF69B4'; // Pink to match Play Now image
+            ctx.shadowBlur = glowSize * glowIntensity;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 0;
+
+            // Draw multiple times for stronger glow
+            ctx.drawImage(playImg, playX, playY, playWidth, playHeight);
+            ctx.drawImage(playImg, playX, playY, playWidth, playHeight);
+
+            ctx.restore();
+        }
     } else if (state === GameState.GAME_OVER) {
         ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
         ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
