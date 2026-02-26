@@ -945,8 +945,17 @@ function render(ctx) {
         // Restart text - bottom center
         ctx.textAlign = 'center';
         ctx.font = "bold 24px 'Tinker Bell', Arial";
-        ctx.strokeText('Press R or Tap to Restart', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 30);
-        ctx.fillText('Press R or Tap to Restart', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 30);
+        ctx.strokeText('Press R or Tap to Restart', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 40);
+        ctx.fillText('Press R or Tap to Restart', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 40);
+
+        // Credits text - bottom left corner
+        ctx.textAlign = 'left';
+        ctx.font = "18px 'Tinker Bell', Arial";
+        ctx.lineWidth = 1;
+        ctx.strokeText('Produced by bsims', 10, CANVAS_HEIGHT - 28);
+        ctx.fillText('Produced by bsims', 10, CANVAS_HEIGHT - 28);
+        ctx.strokeText('Artwork by alphablue and Bib', 10, CANVAS_HEIGHT - 10);
+        ctx.fillText('Artwork by alphablue and Bib', 10, CANVAS_HEIGHT - 10);
         ctx.restore();
     }
 
