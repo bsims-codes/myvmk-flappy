@@ -507,6 +507,15 @@ const PARTICLE_SPAWN_RATE = 4; // particles per frame
 const PARTICLE_COLORS = ['#FFD700', '#FFF8DC', '#FFFACD', '#e7db91']; // gold, cream
 let trailY = BIRD_START_Y + BIRD_HEIGHT * 0.3; // smoothed Y position for trail
 
+// Rain particles
+let rainDrops = [];
+const RAIN_DROP_COUNT = 80; // Number of rain drops on screen
+const RAIN_SPEED_MIN = 400; // px/s
+const RAIN_SPEED_MAX = 600; // px/s
+const RAIN_LENGTH_MIN = 10;
+const RAIN_LENGTH_MAX = 20;
+const RAIN_OPACITY = 0.25; // Subtle transparency
+
 function spawnParticle() {
     // Slowly follow bird's Y position (creates smooth horizontal trail)
     trailY += (bird.y + BIRD_HEIGHT * 0.3 - trailY) * 0.02;
@@ -565,6 +574,56 @@ function renderParticles(ctx) {
     }
 }
 
+// ============================================
+// RAIN PARTICLES
+// ============================================
+function initRain() {
+    rainDrops = [];
+    for (let i = 0; i < RAIN_DROP_COUNT; i++) {
+        rainDrops.push(createRainDrop(true));
+    }
+}
+
+function createRainDrop(randomY = false) {
+    return {
+        x: Math.random() * (CANVAS_WIDTH + 100) - 50, // Slight horizontal spread
+        y: randomY ? Math.random() * CANVAS_HEIGHT : -RAIN_LENGTH_MAX,
+        speed: RAIN_SPEED_MIN + Math.random() * (RAIN_SPEED_MAX - RAIN_SPEED_MIN),
+        length: RAIN_LENGTH_MIN + Math.random() * (RAIN_LENGTH_MAX - RAIN_LENGTH_MIN),
+        drift: -30 - Math.random() * 20 // Slight leftward drift for wind effect
+    };
+}
+
+function updateRain(dt) {
+    for (let i = 0; i < rainDrops.length; i++) {
+        const drop = rainDrops[i];
+        drop.y += drop.speed * dt;
+        drop.x += drop.drift * dt;
+
+        // Reset drop when it goes off screen
+        if (drop.y > CANVAS_HEIGHT + drop.length || drop.x < -50) {
+            rainDrops[i] = createRainDrop(false);
+        }
+    }
+}
+
+function renderRain(ctx) {
+    ctx.save();
+    ctx.strokeStyle = `rgba(180, 200, 220, ${RAIN_OPACITY})`;
+    ctx.lineWidth = 1;
+    ctx.lineCap = 'round';
+
+    for (const drop of rainDrops) {
+        ctx.beginPath();
+        // Draw angled line (slight angle for wind effect)
+        ctx.moveTo(drop.x, drop.y);
+        ctx.lineTo(drop.x - 3, drop.y + drop.length);
+        ctx.stroke();
+    }
+
+    ctx.restore();
+}
+
 // Score
 let score = 0;
 let bestScore = parseInt(localStorage.getItem('flappyBestScore')) || 0;
@@ -586,6 +645,7 @@ function resetGame() {
     pipes = [];
     pipeTimer = 0;
     particles = [];
+    rainDrops = [];
     trailY = BIRD_START_Y + BIRD_HEIGHT * 0.3;
     palmOffset = 0;
     palmPattern = [];
@@ -638,6 +698,8 @@ function handleFlap() {
         // Reset timing to prevent accumulated time from causing instant drop
         lastTime = performance.now();
         accumulator = 0;
+        // Initialize rain for gameplay
+        initRain();
         playFlap();
     } else if (state === GameState.PLAYING) {
         bird.vy = FLAP_VELOCITY;
@@ -673,6 +735,9 @@ function update(dt) {
     for (let i = 0; i < PARTICLE_SPAWN_RATE; i++) {
         spawnParticle();
     }
+
+    // Update rain
+    updateRain(dt);
 
     // Update bird physics
     bird.vy += GRAVITY * dt;
@@ -826,6 +891,11 @@ function render(ctx) {
 
     // Draw pixie dust particles (behind bird)
     renderParticles(ctx);
+
+    // Draw rain overlay (only during gameplay)
+    if (state === GameState.PLAYING) {
+        renderRain(ctx);
+    }
 
     // Draw ground (skip during READY state for clean title screen)
     if (state !== GameState.READY) {
